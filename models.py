@@ -13,6 +13,7 @@ class User(Base):
     full_name = Column(String(100), nullable=False)
     password = Column(String(128), nullable=False)  # Đủ dài cho mật khẩu hash
     email = Column(String(100), unique=True, nullable=False)
+    phone = Column(String(15), unique=True, nullable=False)
     avatar_url = Column(String(255))
     role = Column(String(20), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
