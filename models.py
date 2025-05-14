@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Table
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -23,6 +23,30 @@ class User(Base):
     enrollments = relationship("Enrollment", back_populates="user")
     reviews = relationship("Review", back_populates="user")
     comments = relationship("Comment", back_populates="user")
+
+# Bảng trung gian user_notifications
+user_notifications = Table(
+    "user_notifications",
+    Base.metadata,
+    Column("user_id", Integer, ForeignKey("users.user_id"), primary_key=True),
+    Column("notification_id", Integer, ForeignKey("notifications.notification_id"), primary_key=True)
+)
+
+# Bảng Notifications
+class Notification(Base):
+    __tablename__ = "notifications"
+    notification_id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(1000), nullable=False)
+    message = Column(String(1000), nullable=False)
+    is_read = Column(Integer, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    image_url = Column(String(1000), nullable=False)
+
+    users = relationship("User", secondary=user_notifications, back_populates="notifications")
+
+# Cập nhật bảng Users để thêm mối quan hệ nhiều-nhiều
+User.notifications = relationship("Notification", secondary=user_notifications, back_populates="users")
+
 
 # Bảng Wishlists
 class Wishlist(Base):
