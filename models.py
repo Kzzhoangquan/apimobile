@@ -9,13 +9,14 @@ Base = declarative_base()
 class User(Base):
     __tablename__ = "users"
     user_id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(50), unique=True, nullable=False)
+    username = Column(String(50), unique=True, nullable=True)
     full_name = Column(String(100), nullable=False)
-    password = Column(String(128), nullable=False)  # Đủ dài cho mật khẩu hash
+    password = Column(String(128), nullable=True)
     email = Column(String(100), unique=True, nullable=False)
-    phone = Column(String(15), unique=True, nullable=False)
+    phone = Column(String(15), unique=True, nullable=True)
     avatar_url = Column(String(255))
-    role = Column(String(20), nullable=False)
+    google_id = Column(String(255), unique=True, nullable=True)
+    role = Column(String(20), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     wishlists = relationship("Wishlist", back_populates="user")
@@ -38,11 +39,12 @@ class Wishlist(Base):
 class Course(Base):
     __tablename__ = "courses"
     course_id = Column(Integer, primary_key=True, index=True)
-    instructor_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    owner_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
     title = Column(String(100), nullable=False)
     description = Column(String(1000))
     thumbnail_url = Column(String(255))
     created_at = Column(DateTime, default=datetime.utcnow)
+    price = Column(Float, nullable=True)
 
     instructor = relationship("User")
     wishlists = relationship("Wishlist", back_populates="course")
@@ -99,3 +101,58 @@ class Comment(Base):
 
     user = relationship("User", back_populates="comments")
     lesson = relationship("Lesson", back_populates="comments")
+
+# Bảng Quizzes
+class Quiz(Base):
+    __tablename__ = "quizzes"
+    quiz_id = Column(Integer, primary_key=True, index=True)
+    lesson_id = Column(Integer, ForeignKey("lessons.lesson_id"), nullable=False)
+    title = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    lesson = relationship("Lesson", back_populates="quizzes")
+    questions = relationship("Question", back_populates="quiz")
+
+# Thêm mối quan hệ vào bảng Lessons
+Lesson.quizzes = relationship("Quiz", back_populates="lesson")
+
+# Bảng Questions
+class Question(Base):
+    __tablename__ = "questions"
+    question_id = Column(Integer, primary_key=True, index=True)
+    quiz_id = Column(Integer, ForeignKey("quizzes.quiz_id"), nullable=False)
+    content = Column(String(1000), nullable=False)
+    question_type = Column(String(50), nullable=False)  # Ví dụ: MULTIPLE_CHOICE, TRUE_FALSE, TEXT
+
+    quiz = relationship("Quiz", back_populates="questions")
+    options = relationship("Option", back_populates="question")
+    user_answers = relationship("UserAnswer", back_populates="question")
+
+# Bảng Options
+class Option(Base):
+    __tablename__ = "options"
+    option_id = Column(Integer, primary_key=True, index=True)
+    question_id = Column(Integer, ForeignKey("questions.question_id"), nullable=False)
+    content = Column(String(1000), nullable=False)
+    is_correct = Column(Integer, nullable=False)
+    position = Column(Integer, nullable=False)
+
+    question = relationship("Question", back_populates="options")
+    user_answers = relationship("UserAnswer", back_populates="selected_option")
+
+# Bảng QuizResults
+class QuizResult(Base):
+    __tablename__ = "quiz_results"
+    quiz_result_id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    quiz_id = Column(Integer, ForeignKey("quizzes.quiz_id"), nullable=False)
+    total_score = Column(Float, default=0.0)  # Tổng điểm của quiz
+    completed_at = Column(DateTime, default=datetime.utcnow)  # Thời gian hoàn thành
+
+    user = relationship("User", back_populates="quiz_results")
+    quiz = relationship("Quiz", back_populates="quiz_results")
+    user_answers = relationship("UserAnswer", back_populates="quiz_result")  # Liên kết với UserAnswer
+
+# Thêm mối quan hệ vào bảng Users và Quizzes
+User.quiz_results = relationship("QuizResult", back_populates="user")
+Quiz.quiz_results = relationship("QuizResult", back_populates="quiz")
