@@ -150,8 +150,6 @@ class Question(Base):
 
     quiz = relationship("Quiz", back_populates="questions")
     options = relationship("Option", back_populates="question")
-    user_answers = relationship("UserAnswer", back_populates="question")
-
 # Bảng Options
 class Option(Base):
     __tablename__ = "options"
@@ -162,7 +160,6 @@ class Option(Base):
     position = Column(Integer, nullable=False)
 
     question = relationship("Question", back_populates="options")
-    user_answers = relationship("UserAnswer", back_populates="selected_option")
 
 # Bảng QuizResults
 class QuizResult(Base):
@@ -175,8 +172,6 @@ class QuizResult(Base):
 
     user = relationship("User", back_populates="quiz_results")
     quiz = relationship("Quiz", back_populates="quiz_results")
-    user_answers = relationship("UserAnswer", back_populates="quiz_result")  # Liên kết với UserAnswer
-
 # Thêm mối quan hệ vào bảng Users và Quizzes
 User.quiz_results = relationship("QuizResult", back_populates="user")
 Quiz.quiz_results = relationship("QuizResult", back_populates="quiz")
