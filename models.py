@@ -15,7 +15,7 @@ class User(Base):
     email = Column(String(100), unique=True, nullable=False)
     phone = Column(String(15), unique=True, nullable=True)
     avatar_url = Column(String(255))
-    google_id = Column(String(1000), unique=True, nullable=True)
+    google_id = Column(String(255), unique=True, nullable=True)
     role = Column(String(20), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -167,7 +167,7 @@ class QuizResult(Base):
     quiz_result_id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
     quiz_id = Column(Integer, ForeignKey("quizzes.quiz_id"), nullable=False)
-    total_score = Column(Float, default=0.0)  # Tổng điểm của quiz
+    total_score = Column(String(50), default="0/0")
     completed_at = Column(DateTime, default=datetime.utcnow)  # Thời gian hoàn thành
 
     user = relationship("User", back_populates="quiz_results")
