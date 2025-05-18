@@ -15,7 +15,7 @@ class User(Base):
     email = Column(String(100), unique=True, nullable=False)
     phone = Column(String(15), unique=True, nullable=True)
     avatar_url = Column(String(255))
-    google_id = Column(String(1000), unique=True, nullable=True)
+    google_id = Column(String(255), unique=True, nullable=True)
     role = Column(String(20), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -69,6 +69,7 @@ class Course(Base):
     thumbnail_url = Column(String(255))
     created_at = Column(DateTime, default=datetime.utcnow)
     price = Column(Float, nullable=True)
+    category = Column(String(100), nullable=True)
 
     instructor = relationship("User")
     wishlists = relationship("Wishlist", back_populates="course")
