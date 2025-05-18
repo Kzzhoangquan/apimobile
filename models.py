@@ -69,6 +69,7 @@ class Course(Base):
     thumbnail_url = Column(String(255))
     created_at = Column(DateTime, default=datetime.utcnow)
     price = Column(Float, nullable=True)
+    category = Column(String(100), nullable=True)
 
     instructor = relationship("User")
     wishlists = relationship("Wishlist", back_populates="course")
@@ -167,7 +168,7 @@ class QuizResult(Base):
     quiz_result_id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
     quiz_id = Column(Integer, ForeignKey("quizzes.quiz_id"), nullable=False)
-    total_score = Column(Float, default=0.0)  # Tổng điểm của quiz
+    total_score = Column(String(50), default="0/0")
     completed_at = Column(DateTime, default=datetime.utcnow)  # Thời gian hoàn thành
 
     user = relationship("User", back_populates="quiz_results")
