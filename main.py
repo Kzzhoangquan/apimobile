@@ -16,7 +16,7 @@ import cloudinary.uploader
 from models import User, Course, Lesson, Review, Comment, Enrollment, Notification , user_notifications,FCMToken,Wishlist
 from schemas import (
     CourseBase, LessonBase, ReviewBase, CommentBase,
-    ReviewCreate, CommentCreate, NotificationSchema , NotificationCreate , FCMTokenSchema, FCMTokenCreate
+    ReviewCreate, CommentCreate, NotificationSchema , NotificationCreate , FCMTokenSchema, FCMTokenCreate,EnrollmentResponse
 )
 from fcm_helper import FCMHelper
 
@@ -1026,6 +1026,72 @@ def check_wishlist(userId: int = Query(...), courseId: int = Query(...), db: Ses
     ).first()
     
     return wishlist_entry is not None
+
+# POST /courses/{courseId}/enrollments API
+@app.post("/courses/{courseId}/enrollments", response_model=EnrollmentResponse, status_code=201)
+async def enroll_in_course(
+    courseId: int,
+    request: dict,  # Accept raw JSON body
+    db: Session = Depends(get_db)
+):
+    # Validate user_id in request
+    user_id = request.get("user_id")
+    if not user_id or not isinstance(user_id, int):
+        raise HTTPException(status_code=400, detail="Invalid or missing user_id")
+
+    # Check if the user exists
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Check if the course exists
+    course = db.query(Course).filter(Course.course_id == courseId).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    # Check if the user is already enrolled
+    existing_enrollment = db.query(Enrollment).filter(
+        Enrollment.user_id == user_id,
+        Enrollment.course_id == courseId
+    ).first()
+    if existing_enrollment:
+        raise HTTPException(status_code=400, detail="User is already enrolled in this course")
+
+    # Create new enrollment
+    enrollment = Enrollment(
+        user_id=user_id,
+        course_id=courseId,
+        enrolled_at=datetime.utcnow(),
+        progress=0.0
+    )
+
+    # Add to database
+    db.add(enrollment)
+    db.commit()
+    db.refresh(enrollment)
+
+    # Create response dictionary
+    response = {
+        "enrollment_id": enrollment.enrollment_id,
+        "user_id": enrollment.user_id,
+        "course_id": enrollment.course_id,
+        "enrolled_at": enrollment.enrolled_at,
+        "progress": enrollment.progress,
+        "user": {
+            "user_id": user.user_id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "avatar_url": user.avatar_url
+        },
+        "course": {
+            "course_id": course.course_id,
+            "title": course.title,
+            "description": course.description,
+            "thumbnail_url": course.thumbnail_url
+        }
+    }
+
+    return response
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

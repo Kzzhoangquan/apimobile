@@ -64,13 +64,14 @@ class CommentBase(BaseModel):
     class Config:
         orm_mode = True
 
-class EnrollmentBase(BaseModel):
+class EnrollmentResponse(BaseModel):
     enrollment_id: int
     user_id: int
     course_id: int
     enrolled_at: datetime
-    progress: Optional[float] = 0.0
-    user: UserBase
+    progress: float
+    user: Optional[dict] = None
+    course: Optional[dict] = None
 
     class Config:
         orm_mode = True
