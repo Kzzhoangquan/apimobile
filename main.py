@@ -1,3 +1,4 @@
+from sqlite3 import IntegrityError
 from typing import List
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile,Query
 from sqlalchemy.orm import Session
@@ -60,10 +61,10 @@ class LoginRequest(BaseModel):
     password: str
 
 class GoogleLoginRequest(BaseModel):
-    google_id: str  # Nhận google_id thay vì id_token
+    google_id: str
     email: str
-    display_name: str | None
-    photo_url: str | None
+    full_name: str | None 
+    avatar_url: str | None
 
 class RegisterRequest(BaseModel):
     username: str
@@ -76,7 +77,7 @@ class PhoneCheckRequest(BaseModel):
 
 class PasswordResetRequest(BaseModel):
     phone: str
-    new_password: str
+    password: str
 
 # Model trả về cho Android
 # Model phản hồi
@@ -91,6 +92,34 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+# class QuizRequest(BaseModel):
+#     lesson_id: int
+
+# class OptionResponse(BaseModel):
+#     option_id: int
+#     content: str
+#     is_correct: int
+
+# class QuestionResponse(BaseModel):
+#     question_id: int
+#     content: str
+#     options: List[OptionResponse]
+
+# class QuizResponse(BaseModel):
+#     quizzes: List[QuestionResponse]
+
+class ProfileUpdate(BaseModel):
+    user_id: int
+    full_name: str
+    email: str
+    phone: str
+
+class PasswordChange(BaseModel):
+    user_id: int
+    current_password: str
+    new_password: str
+
 
 class QuizRequest(BaseModel):
     lesson_id: int
@@ -107,18 +136,7 @@ class QuestionResponse(BaseModel):
 
 class QuizResponse(BaseModel):
     quizzes: List[QuestionResponse]
-
-class ProfileUpdate(BaseModel):
-    user_id: int
-    full_name: str
-    email: str
-    phone: str
-
-class PasswordChange(BaseModel):
-    user_id: int
-    current_password: str
-    new_password: str
-
+    
 class QuizResultRequest(BaseModel):
     user_id: int
     question_id: int
@@ -147,6 +165,24 @@ class PagedResponse(BaseModel):
     page_size: int
     total_pages: int
 
+class ScoreItem(BaseModel):
+    course_id: int
+    course_url: Optional[str]
+    course_title: str
+    lesson_id: int
+    lesson_title: str
+    quiz_id: int
+    quiz_title: str
+    score: str
+    ngaylambai: str
+
+class PagedResponse_Score(BaseModel):
+    items: list[ScoreItem]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
 @app.post("/auth/login", response_model=UserResponse)
 def login(request: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == request.username).first()
@@ -168,10 +204,11 @@ def google_login(request: GoogleLoginRequest, db: Session = Depends(get_db)):
         username=request.email.split("@")[0],  # Tạo username từ email
         email=request.email,
         google_id=request.google_id,
-        full_name=request.display_name or "Google User",
-        avatar_url=request.photo_url,
+        full_name=request.full_name or "Google User",
+        avatar_url=request.avatar_url,
         role="user",
-        password=None  # Không cần password cho Google login
+        password=None,
+        phone = "không có"  
     )
     db.add(user)
     db.commit()
@@ -183,13 +220,13 @@ def google_login(request: GoogleLoginRequest, db: Session = Depends(get_db)):
 def register(request: RegisterRequest, db: Session = Depends(get_db)):
     # Kiểm tra username hoặc email đã tồn tại
     existing_user = db.query(User).filter(
-        (User.username == request.username) | (User.email == request.email)
+        (User.username == request.username) | (User.phone == request.phone)
     ).first()
     if existing_user:
         if existing_user.username == request.username:
             raise HTTPException(status_code=400, detail="Username đã tồn tại")
-        # if existing_user.email == request.email:
-        #     raise HTTPException(status_code=400, detail="Email đã tồn tại")
+        if existing_user.phone == request.phone:
+            raise HTTPException(status_code=400, detail="Số điện thoại đã tồn tại")
 
     # Tạo user mới
     user = User(
@@ -220,7 +257,7 @@ def reset_password(request: PasswordResetRequest, db: Session = Depends(get_db))
     user = db.query(User).filter(User.phone == request.phone).first()
     if not user:
         raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản với số điện thoại này")
-    user.password = request.new_password
+    user.password = request.password
     db.commit()
     db.refresh(user)
     return {"detail": "Đặt lại mật khẩu thành công"}
@@ -296,21 +333,17 @@ async def upload_image(file: UploadFile = File(...), user_id: int = Form(...)):
 @app.post("/update-profile")
 async def update_profile(profile: ProfileUpdate):
     db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.user_id == profile.user_id).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="Người dùng không tồn tại")
+    check = db.query(User).filter((User.phone ==  profile.phone) & (User.user_id != profile.user_id)).first()
+    if check:
+        raise HTTPException(status_code=400, detail="Số điện thoại đã tồn tại")
+    user = db.query(User).filter(User.user_id == profile.user_id).first()
+    user.full_name = profile.full_name
+    user.email = profile.email
+    user.phone = profile.phone
+    db.commit()
+    return {"message": "Cập nhật thông tin thành công"}
 
-        user.full_name = profile.full_name
-        user.email = profile.email
-        user.phone = profile.phone
-        db.commit()
-        return {"message": "Cập nhật thông tin thành công"}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
+    
 
 @app.post("/change-password")
 async def change_password(password_change: PasswordChange):
@@ -376,7 +409,59 @@ async def save_quiz_result(result: QuizResultRequest):
     finally:
         db.close()
 
-        
+
+@app.get("/api/scores", response_model=PagedResponse_Score)
+def get_scores(
+    user_id: int,
+    page: int = Query(0, ge=0),
+    page_size: int = Query(5, ge=1, le=50),
+    query: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    base_query = db.query(QuizResult).join(Quiz, QuizResult.quiz_id == Quiz.quiz_id)\
+                                   .join(Lesson, Quiz.lesson_id == Lesson.lesson_id)\
+                                   .join(Course, Lesson.course_id == Course.course_id)\
+                                   .filter(QuizResult.user_id == user_id)\
+                                   .order_by(QuizResult.completed_at.desc())  # Sort by most recent first
+    
+    if query:
+        search_term = f"%{query}%"
+        base_query = base_query.filter(
+            or_(
+                Course.title.ilike(search_term),
+                Lesson.title.ilike(search_term),
+                Quiz.title.ilike(search_term)
+            )
+        )
+    
+    total = base_query.count()
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 0
+    
+    scores = base_query.offset(page * page_size).limit(page_size).all()
+    
+    items = []
+    for score in scores:
+        lesson = db.query(Lesson).filter(Lesson.lesson_id == score.quiz.lesson_id).first()
+        course = db.query(Course).filter(Course.course_id == lesson.course_id).first()
+        items.append({
+            "course_id": course.course_id,
+            "course_url": course.thumbnail_url,
+            "course_title": course.title,
+            "lesson_id": lesson.lesson_id,
+            "lesson_title": lesson.title,
+            "quiz_id": score.quiz_id,
+            "quiz_title": score.quiz.title,
+            "score": score.total_score,
+            "ngaylambai": score.completed_at.strftime("%d/%m/%Y")
+        })
+    
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages
+    }
 
 # Danh sách khóa học nổi bật
 @app.get("/api/courses/top", response_model=List[CourseResponse])

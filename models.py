@@ -12,7 +12,7 @@ class User(Base):
     username = Column(String(50), unique=True, nullable=True)
     full_name = Column(String(100), nullable=False)
     password = Column(String(128), nullable=True)
-    email = Column(String(100), unique=True, nullable=False)
+    email = Column(String(100), nullable=False)
     phone = Column(String(15), unique=True, nullable=True)
     avatar_url = Column(String(255))
     google_id = Column(String(255), unique=True, nullable=True)
@@ -147,7 +147,7 @@ class Question(Base):
     question_id = Column(Integer, primary_key=True, index=True)
     quiz_id = Column(Integer, ForeignKey("quizzes.quiz_id"), nullable=False)
     content = Column(String(1000), nullable=False)
-    question_type = Column(String(50), nullable=False)  # Ví dụ: MULTIPLE_CHOICE, TRUE_FALSE, TEXT
+    question_type = Column(String(50), nullable=False)  # Ví dụ: MULTIPLE_CHOICE
 
     quiz = relationship("Quiz", back_populates="questions")
     options = relationship("Option", back_populates="question")
@@ -157,8 +157,8 @@ class Option(Base):
     option_id = Column(Integer, primary_key=True, index=True)
     question_id = Column(Integer, ForeignKey("questions.question_id"), nullable=False)
     content = Column(String(1000), nullable=False)
-    is_correct = Column(Integer, nullable=False)
-    position = Column(Integer, nullable=False)
+    is_correct = Column(Integer, nullable=False) # sai là 0 , đúng là 1
+    position = Column(Integer, nullable=False) # 0, 1, 2, 3
 
     question = relationship("Question", back_populates="options")
 
