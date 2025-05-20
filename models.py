@@ -173,6 +173,20 @@ class QuizResult(Base):
 
     user = relationship("User", back_populates="quiz_results")
     quiz = relationship("Quiz", back_populates="quiz_results")
+
+# Thêm bảng FCM Token
+class FCMToken(Base):
+    __tablename__ = "fcm_tokens"
+    token_id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    token = Column(String(255), nullable=False, unique=True)
+    device_type = Column(String(50), nullable=True)  # Ví dụ: "android", "ios"
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    user = relationship("User", back_populates="fcm_tokens")
+
+# Cập nhật bảng User để thêm mối quan hệ
+User.fcm_tokens = relationship("FCMToken", back_populates="user")
 # Thêm mối quan hệ vào bảng Users và Quizzes
 User.quiz_results = relationship("QuizResult", back_populates="user")
 Quiz.quiz_results = relationship("QuizResult", back_populates="quiz")
