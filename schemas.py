@@ -88,3 +88,33 @@ class CommentCreate(BaseModel):
     user_id: int
     comment: str
     created_at: datetime
+
+class NotificationSchema(BaseModel):
+    notification_id: int
+    title: str
+    message: str
+    is_read: int
+    created_at: datetime
+    image_url: Optional[str] = None
+
+    class Config:
+        orm_mode = True
+
+class NotificationCreate(BaseModel):
+    title: str
+    message: str
+    image_url: Optional[str] = None
+
+class FCMTokenSchema(BaseModel):
+    token_id: int
+    user_id: int
+    token: str
+    device_type: Optional[str] = None
+    last_updated: datetime
+
+    class Config:
+        orm_mode = True
+
+class FCMTokenCreate(BaseModel):
+    token: str
+    device_type: Optional[str] = None
