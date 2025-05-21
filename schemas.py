@@ -16,6 +16,7 @@ class UserBase(BaseModel):
 
     class Config:
         orm_mode = True
+        from_attributes=True
 
 class CourseBase(BaseModel):
     course_id: int
@@ -52,6 +53,7 @@ class ReviewBase(BaseModel):
 
     class Config:
         orm_mode = True
+        from_attributes=True
 
 class CommentBase(BaseModel):
     comment_id: int
@@ -63,6 +65,7 @@ class CommentBase(BaseModel):
 
     class Config:
         orm_mode = True
+        from_attributes=True
 
 class EnrollmentResponse(BaseModel):
     enrollment_id: int
@@ -118,3 +121,19 @@ class FCMTokenSchema(BaseModel):
 class FCMTokenCreate(BaseModel):
     token: str
     device_type: Optional[str] = None
+
+# New Pagination model
+class Pagination(BaseModel):
+    currentPage: int
+    pageSize: int
+    totalItems: int
+    totalPages: int
+
+# New PaginatedCommentsResponse model
+class PaginatedCommentsResponse(BaseModel):
+    data: List[CommentBase]
+    pagination: Pagination
+
+class PaginatedReviewsResponse(BaseModel):
+    data: List[ReviewBase]
+    pagination: Pagination

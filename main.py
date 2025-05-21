@@ -1,7 +1,7 @@
 from sqlite3 import IntegrityError
 from typing import List
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile,Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.sql import func
 from sqlalchemy import or_
 from database import SessionLocal, get_db
@@ -16,9 +16,11 @@ import cloudinary.uploader
 from models import User, Course, Lesson, Review, Comment, Enrollment, Notification , user_notifications,FCMToken,Wishlist
 from schemas import (
     CourseBase, LessonBase, ReviewBase, CommentBase,
-    ReviewCreate, CommentCreate, NotificationSchema , NotificationCreate , FCMTokenSchema, FCMTokenCreate,EnrollmentResponse
+    ReviewCreate, CommentCreate, NotificationSchema , NotificationCreate , FCMTokenSchema, FCMTokenCreate,EnrollmentResponse, PaginatedCommentsResponse, Pagination, PaginatedReviewsResponse
 )
 from fcm_helper import FCMHelper
+from math import ceil
+import traceback
 
 app = FastAPI()
 
@@ -617,6 +619,18 @@ def get_course_by_id(id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Course not found")
     return course
 
+@app.get("/courses/{course_id}/enrollment-count", response_model=int)
+def get_enrollment_count(course_id: int, db: Session = Depends(get_db)):
+    # Verify the course exists
+    course = db.query(Course).filter(Course.course_id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    # Count the number of enrollments for the course
+    enrollment_count = db.query(func.count(Enrollment.enrollment_id)).filter(Enrollment.course_id == course_id).scalar()
+
+    return enrollment_count
+
 @app.get("/lessons/{id}", response_model=LessonBase)
 def get_lesson_by_id(id: int, db: Session = Depends(get_db)):
     lesson = db.query(Lesson).filter(Lesson.lesson_id == id).first()
@@ -631,17 +645,125 @@ def get_lessons_by_course_id(course_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No lessons found for this course")
     return lessons
 
-@app.get("/courses/{course_id}/reviews", response_model=list[ReviewBase])
-def get_reviews_by_course_id(course_id: int, db: Session = Depends(get_db)):
-    reviews = db.query(Review).filter(Review.course_id == course_id).all()
-    if not reviews:
-        raise HTTPException(status_code=404, detail="No reviews found for this course")
-    return reviews
+@app.get("/courses/{course_id}/reviews", response_model=PaginatedReviewsResponse)
+def get_reviews_by_course_id(
+    course_id: int,
+    page: int = 1,  # Default to page 1
+    size: int = 5,  # Default to 10 reviews per page
+    db: Session = Depends(get_db)
+):
+    try:
+        # Validate page and size
+        if page < 1:
+            raise HTTPException(status_code=400, detail="Page number must be 1 or greater")
+        if size < 1:
+            raise HTTPException(status_code=400, detail="Page size must be 1 or greater")
 
-@app.get("/lessons/{lesson_id}/comments", response_model=list[CommentBase])
-def get_comments_by_lesson_id(lesson_id: int, db: Session = Depends(get_db)):
-    comments = db.query(Comment).filter(Comment.lesson_id == lesson_id).all()
-    return comments
+        # Calculate offset
+        offset = (page - 1) * size
+
+        # Fetch paginated reviews with user data
+        reviews = (
+            db.query(Review)
+            .filter(Review.course_id == course_id)
+            .options(joinedload(Review.user))  # Eagerly load user data
+            .order_by(Review.created_at.desc())
+            .offset(offset)
+            .limit(size)
+            .all()
+        )
+
+        if not reviews:
+            raise HTTPException(status_code=404, detail="No reviews found for this course")
+
+        # Get total number of reviews
+        total_items = db.query(Review).filter(Review.course_id == course_id).count()
+
+        # Calculate total pages
+        total_pages = ceil(total_items / size) if total_items > 0 else 1
+
+        # Build pagination metadata
+        pagination = Pagination(
+            currentPage=page,
+            pageSize=size,
+            totalItems=total_items,
+            totalPages=total_pages
+        )
+
+        # Return paginated response
+        return PaginatedReviewsResponse(
+            data=reviews,  # FastAPI will convert SQLAlchemy objects to ReviewBase
+            pagination=pagination
+        )
+    except Exception as e:
+        logger.error(f"Error fetching reviews for course_id {course_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()  # Print stack trace for debugging
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/lessons/{lesson_id}/comments", response_model=PaginatedCommentsResponse)
+def get_comments_by_lesson_id(
+    lesson_id: int,
+    page: int = 1,  # Default to page 1
+    size: int = 10,  # Default to 10 comments per page
+    db: Session = Depends(get_db)
+):
+    try:
+        # Check if lesson exists
+        lesson = db.query(Lesson).filter(Lesson.lesson_id == lesson_id).first()
+        if not lesson:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+
+        # Validate page and size
+        if page < 1:
+            raise HTTPException(status_code=400, detail="Page number must be 1 or greater")
+        if size < 1:
+            raise HTTPException(status_code=400, detail="Page size must be 1 or greater")
+
+        # Calculate offset
+        offset = (page - 1) * size
+
+        # Fetch paginated comments with user data
+        comments = (
+            db.query(Comment)
+            .filter(Comment.lesson_id == lesson_id)
+            .options(joinedload(Comment.user))  # Eagerly load user data
+            .order_by(Comment.created_at.desc())
+            .offset(offset)
+            .limit(size)
+            .all()
+        )
+
+        # Get total number of comments
+        total_items = db.query(Comment).filter(Comment.lesson_id == lesson_id).count()
+
+        # Calculate total pages
+        total_pages = ceil(total_items / size) if total_items > 0 else 1
+
+        # Build pagination metadata
+        pagination = Pagination(
+            currentPage=page,
+            pageSize=size,
+            totalItems=total_items,
+            totalPages=total_pages
+        )
+
+        # Convert SQLAlchemy Comment objects to CommentBase Pydantic models
+        try:
+            comment_schemas = [CommentBase.from_orm(comment) for comment in comments]
+        except AttributeError:
+            # Fallback for Pydantic v2
+            comment_schemas = [CommentBase.model_validate(comment) for comment in comments]
+
+        # Return paginated response
+        return PaginatedCommentsResponse(
+            data=comment_schemas,
+            pagination=pagination
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()  # Print stack trace for debugging
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/reviews", response_model=ReviewBase)
 def add_review(review: ReviewCreate, db: Session = Depends(get_db)):
