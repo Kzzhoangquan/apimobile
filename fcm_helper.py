@@ -7,7 +7,7 @@ class FCMHelper:
     """Lớp hỗ trợ gửi thông báo qua Firebase Cloud Messaging API v1."""
     
     # Đường dẫn đến file chứa khóa service account
-    SERVICE_ACCOUNT_KEY_PATH = "duong-ef747-firebase-adminsdk-r6np1-855dec2ead.json"
+    SERVICE_ACCOUNT_KEY_PATH = "duong-ef747-firebase-adminsdk-r6np1-57fd5b0f25.json"
     
     # Biến lưu trạng thái khởi tạo
     _initialized = False

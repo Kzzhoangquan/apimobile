@@ -1093,5 +1093,64 @@ async def enroll_in_course(
 
     return response
 
+@app.post("/notifications/create-for-users", response_model=NotificationSchema)
+def create_notification_for_users(
+    notification: NotificationCreate, 
+    db: Session = Depends(get_db)
+):
+    """Tạo thông báo mới và gửi đến tất cả người dùng có vai trò 'user'."""
+    # Lấy danh sách ID của tất cả người dùng có vai trò 'user'
+    user_ids = db.query(User.user_id).filter(User.role == "user").all()
+    user_ids = [user_id[0] for user_id in user_ids]
+    
+    if not user_ids:
+        raise HTTPException(status_code=404, detail="Không tìm thấy người dùng nào có vai trò 'user'")
+    
+    # Tạo notification mới
+    new_notification = Notification(
+        title=notification.title,
+        message=notification.message,
+        is_read=0,  # Mặc định là chưa đọc
+        created_at=datetime.utcnow(),
+        image_url=notification.image_url
+    )
+    db.add(new_notification)
+    db.flush()  # Lấy ID mà không commit
+    
+    # Đếm số thông báo đã gửi thành công
+    success_count = 0
+    
+    # Thêm vào bảng trung gian cho mỗi user
+    for user_id in user_ids:
+        # Thêm vào bảng trung gian
+        db.execute(
+            user_notifications.insert().values(
+                user_id=user_id,
+                notification_id=new_notification.notification_id
+            )
+        )
+        
+        # Gửi push notification nếu có
+        try:
+            result = FCMHelper.send_notification_to_user(
+                db=db,
+                user_id=user_id,
+                title=notification.title,
+                body=notification.message,
+                notification_id=new_notification.notification_id,
+                type="notification",
+                image_url=notification.image_url
+            )
+            
+            if result.get("success", False):
+                success_count += 1
+        except Exception as e:
+            print(f"Lỗi khi gửi thông báo cho user_id {user_id}: {str(e)}")
+    
+    db.commit()
+    db.refresh(new_notification)
+    
+    return new_notification
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
