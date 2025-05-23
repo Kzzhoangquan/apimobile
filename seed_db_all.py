@@ -1,7 +1,426 @@
 from models import User, Course, Review, Lesson, Comment, Quiz, Question, Option, Enrollment, Wishlist, Notification, Base, user_notifications
-from database import SessionLocal, engine
+from database import SessionLocal, engine , create_engine , sessionmaker
 from datetime import datetime, timedelta
 import random
+
+
+
+DATABASE_URL = "mysql+pymysql://root:root@localhost:3306/elearning"
+engine = create_engine(DATABASE_URL, echo=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def seed_quiz_data():
+    db = SessionLocal()
+    try:
+        # Lấy tất cả lessons có sẵn
+        lessons = db.query(Lesson).all()
+        
+        if not lessons:
+            print("Không có lesson nào trong database. Vui lòng seed lessons trước.")
+            return
+        
+        # Danh sách câu hỏi mẫu cho các chủ đề khác nhau
+        quiz_templates = {
+            "Android Development": {
+                "quiz_title": "Android Development Quiz",
+                "questions": [
+                    {
+                        "content": "Activity nào được gọi đầu tiên khi ứng dụng Android khởi động?",
+                        "options": [
+                            {"content": "MainActivity", "is_correct": 1},
+                            {"content": "BaseActivity", "is_correct": 0},
+                            {"content": "StartActivity", "is_correct": 0},
+                            {"content": "LaunchActivity", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "Layout nào được sử dụng để sắp xếp các view theo dạng lưới?",
+                        "options": [
+                            {"content": "LinearLayout", "is_correct": 0},
+                            {"content": "RelativeLayout", "is_correct": 0},
+                            {"content": "GridLayout", "is_correct": 1},
+                            {"content": "FrameLayout", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "Phương thức nào được gọi khi Activity bị tạm dừng?",
+                        "options": [
+                            {"content": "onCreate()", "is_correct": 0},
+                            {"content": "onResume()", "is_correct": 0},
+                            {"content": "onPause()", "is_correct": 1},
+                            {"content": "onDestroy()", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "Intent được sử dụng để làm gì trong Android?",
+                        "options": [
+                            {"content": "Lưu trữ dữ liệu", "is_correct": 0},
+                            {"content": "Giao tiếp giữa các component", "is_correct": 1},
+                            {"content": "Tạo layout", "is_correct": 0},
+                            {"content": "Quản lý memory", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "RecyclerView được sử dụng để làm gì?",
+                        "options": [
+                            {"content": "Hiển thị danh sách dữ liệu lớn", "is_correct": 1},
+                            {"content": "Lưu trữ dữ liệu", "is_correct": 0},
+                            {"content": "Xử lý animation", "is_correct": 0},
+                            {"content": "Quản lý network", "is_correct": 0}
+                        ]
+                    }
+                ]
+            },
+            "Python Programming": {
+                "quiz_title": "Python Programming Quiz",
+                "questions": [
+                    {
+                        "content": "Python là ngôn ngữ lập trình thuộc loại nào?",
+                        "options": [
+                            {"content": "Compiled", "is_correct": 0},
+                            {"content": "Interpreted", "is_correct": 1},
+                            {"content": "Assembly", "is_correct": 0},
+                            {"content": "Machine", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "Từ khóa nào được sử dụng để định nghĩa hàm trong Python?",
+                        "options": [
+                            {"content": "function", "is_correct": 0},
+                            {"content": "def", "is_correct": 1},
+                            {"content": "fun", "is_correct": 0},
+                            {"content": "method", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "Cấu trúc dữ liệu nào trong Python có thể thay đổi được?",
+                        "options": [
+                            {"content": "Tuple", "is_correct": 0},
+                            {"content": "String", "is_correct": 0},
+                            {"content": "List", "is_correct": 1},
+                            {"content": "Frozenset", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "Phương thức nào được sử dụng để thêm phần tử vào cuối list?",
+                        "options": [
+                            {"content": "add()", "is_correct": 0},
+                            {"content": "append()", "is_correct": 1},
+                            {"content": "insert()", "is_correct": 0},
+                            {"content": "push()", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "Kết quả của 3 ** 2 trong Python là gì?",
+                        "options": [
+                            {"content": "6", "is_correct": 0},
+                            {"content": "9", "is_correct": 1},
+                            {"content": "5", "is_correct": 0},
+                            {"content": "8", "is_correct": 0}
+                        ]
+                    }
+                ]
+            },
+            "Web Development": {
+                "quiz_title": "Web Development Quiz",
+                "questions": [
+                    {
+                        "content": "HTML là viết tắt của gì?",
+                        "options": [
+                            {"content": "Hyper Text Markup Language", "is_correct": 1},
+                            {"content": "Home Tool Markup Language", "is_correct": 0},
+                            {"content": "Hyperlinks Text Mark Language", "is_correct": 0},
+                            {"content": "Hyper Tool Modern Language", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "CSS được sử dụng để làm gì?",
+                        "options": [
+                            {"content": "Tạo cấu trúc trang web", "is_correct": 0},
+                            {"content": "Thêm tính năng tương tác", "is_correct": 0},
+                            {"content": "Tạo kiểu dáng cho trang web", "is_correct": 1},
+                            {"content": "Quản lý database", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "JavaScript chạy ở đâu?",
+                        "options": [
+                            {"content": "Chỉ trên server", "is_correct": 0},
+                            {"content": "Chỉ trên browser", "is_correct": 0},
+                            {"content": "Cả browser và server", "is_correct": 1},
+                            {"content": "Chỉ trên mobile", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "HTTP là viết tắt của gì?",
+                        "options": [
+                            {"content": "Hyper Text Transfer Protocol", "is_correct": 1},
+                            {"content": "Home Text Transfer Protocol", "is_correct": 0},
+                            {"content": "Hyperlinks Text Transfer Protocol", "is_correct": 0},
+                            {"content": "Hyper Tool Transfer Protocol", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "Framework nào phổ biến cho front-end development?",
+                        "options": [
+                            {"content": "Django", "is_correct": 0},
+                            {"content": "React", "is_correct": 1},
+                            {"content": "Laravel", "is_correct": 0},
+                            {"content": "Spring", "is_correct": 0}
+                        ]
+                    }
+                ]
+            },
+            "Data Science": {
+                "quiz_title": "Data Science Quiz",
+                "questions": [
+                    {
+                        "content": "Pandas là gì trong Python?",
+                        "options": [
+                            {"content": "Một game", "is_correct": 0},
+                            {"content": "Thư viện xử lý dữ liệu", "is_correct": 1},
+                            {"content": "Framework web", "is_correct": 0},
+                            {"content": "Database", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "Machine Learning thuộc lĩnh vực nào?",
+                        "options": [
+                            {"content": "Artificial Intelligence", "is_correct": 1},
+                            {"content": "Web Development", "is_correct": 0},
+                            {"content": "Mobile Development", "is_correct": 0},
+                            {"content": "Network Security", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "SQL được sử dụng để làm gì?",
+                        "options": [
+                            {"content": "Tạo giao diện", "is_correct": 0},
+                            {"content": "Quản lý cơ sở dữ liệu", "is_correct": 1},
+                            {"content": "Xử lý hình ảnh", "is_correct": 0},
+                            {"content": "Tạo animation", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "Numpy được sử dụng cho mục đích gì?",
+                        "options": [
+                            {"content": "Xử lý văn bản", "is_correct": 0},
+                            {"content": "Tính toán khoa học", "is_correct": 1},
+                            {"content": "Tạo web", "is_correct": 0},
+                            {"content": "Game development", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "Visualization trong Data Science có nghĩa là gì?",
+                        "options": [
+                            {"content": "Lưu trữ dữ liệu", "is_correct": 0},
+                            {"content": "Trực quan hóa dữ liệu", "is_correct": 1},
+                            {"content": "Xóa dữ liệu", "is_correct": 0},
+                            {"content": "Mã hóa dữ liệu", "is_correct": 0}
+                        ]
+                    }
+                ]
+            },
+            "UI/UX Design": {
+                "quiz_title": "UI/UX Design Quiz",
+                "questions": [
+                    {
+                        "content": "UI là viết tắt của gì?",
+                        "options": [
+                            {"content": "User Interface", "is_correct": 1},
+                            {"content": "Universal Interface", "is_correct": 0},
+                            {"content": "Unique Interface", "is_correct": 0},
+                            {"content": "User Integration", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "UX design tập trung vào điều gì?",
+                        "options": [
+                            {"content": "Màu sắc", "is_correct": 0},
+                            {"content": "Trải nghiệm người dùng", "is_correct": 1},
+                            {"content": "Font chữ", "is_correct": 0},
+                            {"content": "Hiệu ứng", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "Wireframe được sử dụng để làm gì?",
+                        "options": [
+                            {"content": "Tạo màu sắc", "is_correct": 0},
+                            {"content": "Phác thảo layout", "is_correct": 1},
+                            {"content": "Viết code", "is_correct": 0},
+                            {"content": "Test performance", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "Nguyên tắc nào quan trọng trong UI design?",
+                        "options": [
+                            {"content": "Complexity", "is_correct": 0},
+                            {"content": "Simplicity", "is_correct": 1},
+                            {"content": "Chaos", "is_correct": 0},
+                            {"content": "Confusion", "is_correct": 0}
+                        ]
+                    },
+                    {
+                        "content": "Prototype được tạo ra để làm gì?",
+                        "options": [
+                            {"content": "Test và demo ý tưởng", "is_correct": 1},
+                            {"content": "Lưu trữ dữ liệu", "is_correct": 0},
+                            {"content": "Marketing", "is_correct": 0},
+                            {"content": "Backup", "is_correct": 0}
+                        ]
+                    }
+                ]
+            }
+        }
+        
+        # Tạo quiz cho mỗi lesson
+        for lesson in lessons:
+            print(f"Tạo quiz cho lesson: {lesson.title}")
+            
+            # Chọn template quiz dựa trên title của lesson hoặc random
+            template_key = "Android Development"  # Mặc định
+            for key in quiz_templates.keys():
+                if key.lower() in lesson.title.lower():
+                    template_key = key
+                    break
+            
+            template = quiz_templates[template_key]
+            
+            # Tạo quiz
+            quiz = Quiz(
+                lesson_id=lesson.lesson_id,
+                title=f"{template['quiz_title']} - {lesson.title}",
+                created_at=datetime.utcnow()
+            )
+            
+            db.add(quiz)
+            db.flush()  # Để lấy quiz_id
+            
+            # Tạo câu hỏi cho quiz
+            for idx, question_data in enumerate(template["questions"]):
+                question = Question(
+                    quiz_id=quiz.quiz_id,
+                    content=question_data["content"],
+                    question_type="MULTIPLE_CHOICE"
+                )
+                
+                db.add(question)
+                db.flush()  # Để lấy question_id
+                
+                # Tạo các option cho câu hỏi
+                for pos, option_data in enumerate(question_data["options"]):
+                    option = Option(
+                        question_id=question.question_id,
+                        content=option_data["content"],
+                        is_correct=option_data["is_correct"],
+                        position=pos + 1
+                    )
+                    db.add(option)
+            
+            print(f"Đã tạo quiz với {len(template['questions'])} câu hỏi cho lesson {lesson.title}")
+        
+        # Commit tất cả thay đổi
+        db.commit()
+        print(f"Đã tạo thành công quiz cho {len(lessons)} lessons!")
+        
+    except Exception as e:
+        print(f"Lỗi khi tạo quiz data: {str(e)}")
+        db.rollback()
+    finally:
+        db.close()
+
+def add_more_quiz_questions():
+    """Thêm nhiều câu hỏi đa dạng hơn"""
+    db = SessionLocal()
+    try:
+        # Lấy tất cả quiz hiện có
+        quizzes = db.query(Quiz).all()
+        
+        additional_questions = [
+            {
+                "content": "Mô hình MVC trong lập trình có nghĩa là gì?",
+                "options": [
+                    {"content": "Model-View-Controller", "is_correct": 1},
+                    {"content": "Multiple-Virtual-Computer", "is_correct": 0},
+                    {"content": "Modern-Video-Control", "is_correct": 0},
+                    {"content": "Mobile-Visual-Code", "is_correct": 0}
+                ]
+            },
+            {
+                "content": "API là viết tắt của gì?",
+                "options": [
+                    {"content": "Application Programming Interface", "is_correct": 1},
+                    {"content": "Advanced Programming Integration", "is_correct": 0},
+                    {"content": "Automated Program Interface", "is_correct": 0},
+                    {"content": "Application Process Integration", "is_correct": 0}
+                ]
+            },
+            {
+                "content": "Git được sử dụng để làm gì?",
+                "options": [
+                    {"content": "Quản lý phiên bản code", "is_correct": 1},
+                    {"content": "Tạo database", "is_correct": 0},
+                    {"content": "Design UI", "is_correct": 0},
+                    {"content": "Test performance", "is_correct": 0}
+                ]
+            },
+            {
+                "content": "Framework nào phổ biến cho backend development?",
+                "options": [
+                    {"content": "React", "is_correct": 0},
+                    {"content": "Django", "is_correct": 1},
+                    {"content": "Bootstrap", "is_correct": 0},
+                    {"content": "jQuery", "is_correct": 0}
+                ]
+            },
+            {
+                "content": "Debugging có nghĩa là gì?",
+                "options": [
+                    {"content": "Tìm và sửa lỗi trong code", "is_correct": 1},
+                    {"content": "Tạo tài liệu", "is_correct": 0},
+                    {"content": "Kiểm tra hiệu suất", "is_correct": 0},
+                    {"content": "Backup dữ liệu", "is_correct": 0}
+                ]
+            }
+        ]
+        
+        # Thêm câu hỏi cho một số quiz ngẫu nhiên
+        selected_quizzes = random.sample(quizzes, min(len(quizzes), 3))
+        
+        for quiz in selected_quizzes:
+            # Chọn ngẫu nhiên 2-3 câu hỏi để thêm
+            questions_to_add = random.sample(additional_questions, random.randint(2, 3))
+            
+            for question_data in questions_to_add:
+                question = Question(
+                    quiz_id=quiz.quiz_id,
+                    content=question_data["content"],
+                    question_type="MULTIPLE_CHOICE"
+                )
+                
+                db.add(question)
+                db.flush()
+                
+                # Tạo các option cho câu hỏi
+                for pos, option_data in enumerate(question_data["options"]):
+                    option = Option(
+                        question_id=question.question_id,
+                        content=option_data["content"],
+                        is_correct=option_data["is_correct"],
+                        position=pos + 1
+                    )
+                    db.add(option)
+            
+            print(f"Đã thêm {len(questions_to_add)} câu hỏi cho quiz: {quiz.title}")
+        
+        db.commit()
+        print("Đã thêm thành công các câu hỏi bổ sung!")
+        
+    except Exception as e:
+        print(f"Lỗi khi thêm câu hỏi: {str(e)}")
+        db.rollback()
+    finally:
+        db.close()
 
 def seed_database():
     # Tạo tất cả các bảng nếu chưa tồn tại
@@ -358,3 +777,5 @@ Học viên sẽ được hỗ trợ 24/7 từ giảng viên.
 
 if __name__ == "__main__":
     seed_database()
+    seed_quiz_data()
+    add_more_quiz_questions()
