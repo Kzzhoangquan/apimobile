@@ -40,6 +40,21 @@ app.add_middleware(
 
 # Model nhận từ Android
 
+class LessonCreateRequest(BaseModel):
+    title: str
+    video_url: str
+    duration: int
+    position: int
+    course_id: int
+
+class CourseCreateRequest(BaseModel):
+    title: str
+    description: str
+    price: float
+    category: str | None = None
+    thumbnail_url: str | None = None
+    owner_id: int
+
 class WishlistRequest(BaseModel):
     userId: int
     courseId: int
@@ -1092,6 +1107,197 @@ async def enroll_in_course(
     }
 
     return response
+
+# Course Management APIs for Instructors
+@app.get("/api/instructors/{instructor_id}/courses", response_model=List[CourseResponse])
+def get_instructor_courses(instructor_id: int, db: Session = Depends(get_db)):
+    """Lấy danh sách khóa học của một instructor."""
+    # Kiểm tra instructor tồn tại
+    instructor = db.query(User).filter(User.user_id == instructor_id).first()
+    if not instructor:
+        raise HTTPException(status_code=404, detail="Instructor not found")
+    
+    # Lấy các khóa học của instructor
+    courses = db.query(Course).filter(Course.owner_id == instructor_id).all()
+    
+    result = []
+    for course in courses:
+        # Tính rating trung bình
+        avg_rating = db.query(func.avg(Review.rating)).filter(
+            Review.course_id == course.course_id).scalar() or 4.5
+        
+        # Kiểm tra bestseller
+        is_bestseller = False
+        reviews_count = db.query(func.count(Review.review_id)).filter(
+            Review.course_id == course.course_id).scalar() or 0
+        if reviews_count >= 3 and avg_rating >= 4.5:
+            is_bestseller = True
+            
+        result.append({
+            "course_id": course.course_id,
+            "title": course.title,
+            "description": course.description,
+            "thumbnail_url": course.thumbnail_url or "https://via.placeholder.com/300x200",
+            "price": course.price or 0.0,
+            "rating": round(avg_rating, 1),
+            "instructor_name": course.instructor.full_name,
+            "is_bestseller": is_bestseller,
+            "category": course.category
+        })
+    
+    return result
+
+@app.post("/api/courses", response_model=CourseResponse)
+def create_course(request: CourseCreateRequest, db: Session = Depends(get_db)):
+    """Tạo khóa học mới."""
+    # Kiểm tra instructor tồn tại
+    instructor = db.query(User).filter(User.user_id == request.owner_id).first()
+    if not instructor:
+        raise HTTPException(status_code=404, detail="Instructor not found")
+    
+    # Tạo khóa học mới
+    new_course = Course(
+        title=request.title,
+        description=request.description,
+        price=request.price,
+        category=request.category,
+        thumbnail_url=request.thumbnail_url or "https://via.placeholder.com/300x200",
+        owner_id=request.owner_id,
+        created_at=datetime.utcnow()
+    )
+    
+    db.add(new_course)
+    db.commit()
+    db.refresh(new_course)
+    
+    return {
+        "course_id": new_course.course_id,
+        "title": new_course.title,
+        "description": new_course.description,
+        "thumbnail_url": new_course.thumbnail_url,
+        "price": new_course.price,
+        "rating": 0.0,
+        "instructor_name": instructor.full_name,
+        "is_bestseller": False,
+        "category": new_course.category
+    }
+
+@app.put("/api/courses/{course_id}", response_model=CourseResponse)
+def update_course(course_id: int, request: CourseCreateRequest, db: Session = Depends(get_db)):
+    """Cập nhật khóa học."""
+    course = db.query(Course).filter(Course.course_id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    # Cập nhật thông tin
+    course.title = request.title
+    course.description = request.description
+    course.price = request.price
+    course.category = request.category
+    course.thumbnail_url = request.thumbnail_url or course.thumbnail_url
+    
+    db.commit()
+    db.refresh(course)
+    
+    # Tính rating trung bình
+    avg_rating = db.query(func.avg(Review.rating)).filter(
+        Review.course_id == course.course_id).scalar() or 4.5
+    
+    return {
+        "course_id": course.course_id,
+        "title": course.title,
+        "description": course.description,
+        "thumbnail_url": course.thumbnail_url,
+        "price": course.price,
+        "rating": round(avg_rating, 1),
+        "instructor_name": course.instructor.full_name,
+        "is_bestseller": False,
+        "category": course.category
+    }
+
+@app.delete("/api/courses/{course_id}")
+def delete_course(course_id: int, db: Session = Depends(get_db)):
+    """Xóa khóa học."""
+    course = db.query(Course).filter(Course.course_id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    # Xóa các bài học liên quan
+    db.query(Lesson).filter(Lesson.course_id == course_id).delete()
+    
+    # Xóa các đánh giá liên quan
+    db.query(Review).filter(Review.course_id == course_id).delete()
+    
+    # Xóa các enrollment liên quan
+    db.query(Enrollment).filter(Enrollment.course_id == course_id).delete()
+    
+    # Xóa khỏi wishlist
+    db.query(Wishlist).filter(Wishlist.course_id == course_id).delete()
+    
+    # Xóa khóa học
+    db.delete(course)
+    db.commit()
+    
+    return {"message": "Course deleted successfully"}
+
+# Lesson Management APIs
+@app.post("/api/lessons", response_model=LessonBase)
+def create_lesson(request: LessonCreateRequest, db: Session = Depends(get_db)):
+    """Tạo bài học mới."""
+    # Kiểm tra khóa học tồn tại
+    course = db.query(Course).filter(Course.course_id == request.course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    # Tạo bài học mới
+    new_lesson = Lesson(
+        title=request.title,
+        video_url=request.video_url,
+        duration=request.duration,
+        position=request.position,
+        course_id=request.course_id
+    )
+    
+    db.add(new_lesson)
+    db.commit()
+    db.refresh(new_lesson)
+    
+    return new_lesson
+
+@app.put("/api/lessons/{lesson_id}", response_model=LessonBase)
+def update_lesson(lesson_id: int, request: LessonCreateRequest, db: Session = Depends(get_db)):
+    """Cập nhật bài học."""
+    lesson = db.query(Lesson).filter(Lesson.lesson_id == lesson_id).first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    
+    # Cập nhật thông tin
+    lesson.title = request.title
+    lesson.video_url = request.video_url
+    lesson.duration = request.duration
+    lesson.position = request.position
+    
+    db.commit()
+    db.refresh(lesson)
+    
+    return lesson
+
+@app.delete("/api/lessons/{lesson_id}")
+def delete_lesson(lesson_id: int, db: Session = Depends(get_db)):
+    """Xóa bài học."""
+    lesson = db.query(Lesson).filter(Lesson.lesson_id == lesson_id).first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    
+    # Xóa các comment liên quan
+    db.query(Comment).filter(Comment.lesson_id == lesson_id).delete()
+    
+    # Xóa bài học
+    db.delete(lesson)
+    db.commit()
+    
+    return {"message": "Lesson deleted successfully"}
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
