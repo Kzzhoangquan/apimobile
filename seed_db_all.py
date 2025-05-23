@@ -5,7 +5,7 @@ import random
 
 
 
-DATABASE_URL = "mysql+pymysql://root:123456@localhost:3306/elearning"
+DATABASE_URL = "mysql+pymysql://root:123456789@localhost:3306/elearning"
 engine = create_engine(DATABASE_URL, echo=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
