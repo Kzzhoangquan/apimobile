@@ -1,7 +1,7 @@
 from sqlite3 import IntegrityError
 from typing import List
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile,Query
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 from sqlalchemy import or_
 from database import SessionLocal, get_db
@@ -16,11 +16,9 @@ import cloudinary.uploader
 from models import User, Course, Lesson, Review, Comment, Enrollment, Notification , user_notifications,FCMToken,Wishlist
 from schemas import (
     CourseBase, LessonBase, ReviewBase, CommentBase,
-    ReviewCreate, CommentCreate, NotificationSchema , NotificationCreate , FCMTokenSchema, FCMTokenCreate,EnrollmentResponse, PaginatedCommentsResponse, Pagination, PaginatedReviewsResponse
+    ReviewCreate, CommentCreate, NotificationSchema , NotificationCreate , FCMTokenSchema, FCMTokenCreate,EnrollmentResponse
 )
 from fcm_helper import FCMHelper
-from math import ceil
-import traceback
 
 app = FastAPI()
 
@@ -41,21 +39,6 @@ app.add_middleware(
 )
 
 # Model nhận từ Android
-
-class LessonCreateRequest(BaseModel):
-    title: str
-    video_url: str
-    duration: int
-    position: int
-    course_id: int
-
-class CourseCreateRequest(BaseModel):
-    title: str
-    description: str
-    price: float
-    category: str | None = None
-    thumbnail_url: str | None = None
-    owner_id: int
 
 class WishlistRequest(BaseModel):
     userId: int
@@ -634,18 +617,6 @@ def get_course_by_id(id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Course not found")
     return course
 
-@app.get("/courses/{course_id}/enrollment-count", response_model=int)
-def get_enrollment_count(course_id: int, db: Session = Depends(get_db)):
-    # Verify the course exists
-    course = db.query(Course).filter(Course.course_id == course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-
-    # Count the number of enrollments for the course
-    enrollment_count = db.query(func.count(Enrollment.enrollment_id)).filter(Enrollment.course_id == course_id).scalar()
-
-    return enrollment_count
-
 @app.get("/lessons/{id}", response_model=LessonBase)
 def get_lesson_by_id(id: int, db: Session = Depends(get_db)):
     lesson = db.query(Lesson).filter(Lesson.lesson_id == id).first()
@@ -660,125 +631,17 @@ def get_lessons_by_course_id(course_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No lessons found for this course")
     return lessons
 
-@app.get("/courses/{course_id}/reviews", response_model=PaginatedReviewsResponse)
-def get_reviews_by_course_id(
-    course_id: int,
-    page: int = 1,  # Default to page 1
-    size: int = 5,  # Default to 10 reviews per page
-    db: Session = Depends(get_db)
-):
-    try:
-        # Validate page and size
-        if page < 1:
-            raise HTTPException(status_code=400, detail="Page number must be 1 or greater")
-        if size < 1:
-            raise HTTPException(status_code=400, detail="Page size must be 1 or greater")
+@app.get("/courses/{course_id}/reviews", response_model=list[ReviewBase])
+def get_reviews_by_course_id(course_id: int, db: Session = Depends(get_db)):
+    reviews = db.query(Review).filter(Review.course_id == course_id).all()
+    if not reviews:
+        raise HTTPException(status_code=404, detail="No reviews found for this course")
+    return reviews
 
-        # Calculate offset
-        offset = (page - 1) * size
-
-        # Fetch paginated reviews with user data
-        reviews = (
-            db.query(Review)
-            .filter(Review.course_id == course_id)
-            .options(joinedload(Review.user))  # Eagerly load user data
-            .order_by(Review.created_at.desc())
-            .offset(offset)
-            .limit(size)
-            .all()
-        )
-
-        if not reviews:
-            raise HTTPException(status_code=404, detail="No reviews found for this course")
-
-        # Get total number of reviews
-        total_items = db.query(Review).filter(Review.course_id == course_id).count()
-
-        # Calculate total pages
-        total_pages = ceil(total_items / size) if total_items > 0 else 1
-
-        # Build pagination metadata
-        pagination = Pagination(
-            currentPage=page,
-            pageSize=size,
-            totalItems=total_items,
-            totalPages=total_pages
-        )
-
-        # Return paginated response
-        return PaginatedReviewsResponse(
-            data=reviews,  # FastAPI will convert SQLAlchemy objects to ReviewBase
-            pagination=pagination
-        )
-    except Exception as e:
-        logger.error(f"Error fetching reviews for course_id {course_id}: {str(e)}")
-        import traceback
-        traceback.print_exc()  # Print stack trace for debugging
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@app.get("/lessons/{lesson_id}/comments", response_model=PaginatedCommentsResponse)
-def get_comments_by_lesson_id(
-    lesson_id: int,
-    page: int = 1,  # Default to page 1
-    size: int = 10,  # Default to 10 comments per page
-    db: Session = Depends(get_db)
-):
-    try:
-        # Check if lesson exists
-        lesson = db.query(Lesson).filter(Lesson.lesson_id == lesson_id).first()
-        if not lesson:
-            raise HTTPException(status_code=404, detail="Lesson not found")
-
-        # Validate page and size
-        if page < 1:
-            raise HTTPException(status_code=400, detail="Page number must be 1 or greater")
-        if size < 1:
-            raise HTTPException(status_code=400, detail="Page size must be 1 or greater")
-
-        # Calculate offset
-        offset = (page - 1) * size
-
-        # Fetch paginated comments with user data
-        comments = (
-            db.query(Comment)
-            .filter(Comment.lesson_id == lesson_id)
-            .options(joinedload(Comment.user))  # Eagerly load user data
-            .order_by(Comment.created_at.desc())
-            .offset(offset)
-            .limit(size)
-            .all()
-        )
-
-        # Get total number of comments
-        total_items = db.query(Comment).filter(Comment.lesson_id == lesson_id).count()
-
-        # Calculate total pages
-        total_pages = ceil(total_items / size) if total_items > 0 else 1
-
-        # Build pagination metadata
-        pagination = Pagination(
-            currentPage=page,
-            pageSize=size,
-            totalItems=total_items,
-            totalPages=total_pages
-        )
-
-        # Convert SQLAlchemy Comment objects to CommentBase Pydantic models
-        try:
-            comment_schemas = [CommentBase.from_orm(comment) for comment in comments]
-        except AttributeError:
-            # Fallback for Pydantic v2
-            comment_schemas = [CommentBase.model_validate(comment) for comment in comments]
-
-        # Return paginated response
-        return PaginatedCommentsResponse(
-            data=comment_schemas,
-            pagination=pagination
-        )
-    except Exception as e:
-        import traceback
-        traceback.print_exc()  # Print stack trace for debugging
-        raise HTTPException(status_code=500, detail="Internal server error")
+@app.get("/lessons/{lesson_id}/comments", response_model=list[CommentBase])
+def get_comments_by_lesson_id(lesson_id: int, db: Session = Depends(get_db)):
+    comments = db.query(Comment).filter(Comment.lesson_id == lesson_id).all()
+    return comments
 
 @app.post("/reviews", response_model=ReviewBase)
 def add_review(review: ReviewCreate, db: Session = Depends(get_db)):
@@ -966,6 +829,65 @@ def create_notification(
     response["fcm_total"] = len(user_ids)
     
     return response
+
+@app.post("/notifications/create-for-users", response_model=NotificationSchema)
+def create_notification_for_users(
+    notification: NotificationCreate, 
+    db: Session = Depends(get_db)
+):
+    """Tạo thông báo mới và gửi đến tất cả người dùng có vai trò 'user'."""
+    # Lấy danh sách ID của tất cả người dùng có vai trò 'user'
+    user_ids = db.query(User.user_id).filter(User.role == "user").all()
+    user_ids = [user_id[0] for user_id in user_ids]
+    
+    if not user_ids:
+        raise HTTPException(status_code=404, detail="Không tìm thấy người dùng nào có vai trò 'user'")
+    
+    # Tạo notification mới
+    new_notification = Notification(
+        title=notification.title,
+        message=notification.message,
+        is_read=0,  # Mặc định là chưa đọc
+        created_at=datetime.utcnow(),
+        image_url=notification.image_url
+    )
+    db.add(new_notification)
+    db.flush()  # Lấy ID mà không commit
+    
+    # Đếm số thông báo đã gửi thành công
+    success_count = 0
+    
+    # Thêm vào bảng trung gian cho mỗi user
+    for user_id in user_ids:
+        # Thêm vào bảng trung gian
+        db.execute(
+            user_notifications.insert().values(
+                user_id=user_id,
+                notification_id=new_notification.notification_id
+            )
+        )
+        
+        # Gửi push notification nếu có
+        try:
+            result = FCMHelper.send_notification_to_user(
+                db=db,
+                user_id=user_id,
+                title=notification.title,
+                body=notification.message,
+                notification_id=new_notification.notification_id,
+                type="notification",
+                image_url=notification.image_url
+            )
+            
+            if result.get("success", False):
+                success_count += 1
+        except Exception as e:
+            print(f"Lỗi khi gửi thông báo cho user_id {user_id}: {str(e)}")
+    
+    db.commit()
+    db.refresh(new_notification)
+    
+    return new_notification
 
 @app.post("/users/{user_id}/fcm-token", response_model=FCMTokenSchema)
 def update_fcm_token(user_id: int, token_data: FCMTokenCreate, db: Session = Depends(get_db)):
@@ -1229,197 +1151,6 @@ async def enroll_in_course(
     }
 
     return response
-
-# Course Management APIs for Instructors
-@app.get("/api/instructors/{instructor_id}/courses", response_model=List[CourseResponse])
-def get_instructor_courses(instructor_id: int, db: Session = Depends(get_db)):
-    """Lấy danh sách khóa học của một instructor."""
-    # Kiểm tra instructor tồn tại
-    instructor = db.query(User).filter(User.user_id == instructor_id).first()
-    if not instructor:
-        raise HTTPException(status_code=404, detail="Instructor not found")
-    
-    # Lấy các khóa học của instructor
-    courses = db.query(Course).filter(Course.owner_id == instructor_id).all()
-    
-    result = []
-    for course in courses:
-        # Tính rating trung bình
-        avg_rating = db.query(func.avg(Review.rating)).filter(
-            Review.course_id == course.course_id).scalar() or 4.5
-        
-        # Kiểm tra bestseller
-        is_bestseller = False
-        reviews_count = db.query(func.count(Review.review_id)).filter(
-            Review.course_id == course.course_id).scalar() or 0
-        if reviews_count >= 3 and avg_rating >= 4.5:
-            is_bestseller = True
-            
-        result.append({
-            "course_id": course.course_id,
-            "title": course.title,
-            "description": course.description,
-            "thumbnail_url": course.thumbnail_url or "https://via.placeholder.com/300x200",
-            "price": course.price or 0.0,
-            "rating": round(avg_rating, 1),
-            "instructor_name": course.instructor.full_name,
-            "is_bestseller": is_bestseller,
-            "category": course.category
-        })
-    
-    return result
-
-@app.post("/api/courses", response_model=CourseResponse)
-def create_course(request: CourseCreateRequest, db: Session = Depends(get_db)):
-    """Tạo khóa học mới."""
-    # Kiểm tra instructor tồn tại
-    instructor = db.query(User).filter(User.user_id == request.owner_id).first()
-    if not instructor:
-        raise HTTPException(status_code=404, detail="Instructor not found")
-    
-    # Tạo khóa học mới
-    new_course = Course(
-        title=request.title,
-        description=request.description,
-        price=request.price,
-        category=request.category,
-        thumbnail_url=request.thumbnail_url or "https://via.placeholder.com/300x200",
-        owner_id=request.owner_id,
-        created_at=datetime.utcnow()
-    )
-    
-    db.add(new_course)
-    db.commit()
-    db.refresh(new_course)
-    
-    return {
-        "course_id": new_course.course_id,
-        "title": new_course.title,
-        "description": new_course.description,
-        "thumbnail_url": new_course.thumbnail_url,
-        "price": new_course.price,
-        "rating": 0.0,
-        "instructor_name": instructor.full_name,
-        "is_bestseller": False,
-        "category": new_course.category
-    }
-
-@app.put("/api/courses/{course_id}", response_model=CourseResponse)
-def update_course(course_id: int, request: CourseCreateRequest, db: Session = Depends(get_db)):
-    """Cập nhật khóa học."""
-    course = db.query(Course).filter(Course.course_id == course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-    
-    # Cập nhật thông tin
-    course.title = request.title
-    course.description = request.description
-    course.price = request.price
-    course.category = request.category
-    course.thumbnail_url = request.thumbnail_url or course.thumbnail_url
-    
-    db.commit()
-    db.refresh(course)
-    
-    # Tính rating trung bình
-    avg_rating = db.query(func.avg(Review.rating)).filter(
-        Review.course_id == course.course_id).scalar() or 4.5
-    
-    return {
-        "course_id": course.course_id,
-        "title": course.title,
-        "description": course.description,
-        "thumbnail_url": course.thumbnail_url,
-        "price": course.price,
-        "rating": round(avg_rating, 1),
-        "instructor_name": course.instructor.full_name,
-        "is_bestseller": False,
-        "category": course.category
-    }
-
-@app.delete("/api/courses/{course_id}")
-def delete_course(course_id: int, db: Session = Depends(get_db)):
-    """Xóa khóa học."""
-    course = db.query(Course).filter(Course.course_id == course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-    
-    # Xóa các bài học liên quan
-    db.query(Lesson).filter(Lesson.course_id == course_id).delete()
-    
-    # Xóa các đánh giá liên quan
-    db.query(Review).filter(Review.course_id == course_id).delete()
-    
-    # Xóa các enrollment liên quan
-    db.query(Enrollment).filter(Enrollment.course_id == course_id).delete()
-    
-    # Xóa khỏi wishlist
-    db.query(Wishlist).filter(Wishlist.course_id == course_id).delete()
-    
-    # Xóa khóa học
-    db.delete(course)
-    db.commit()
-    
-    return {"message": "Course deleted successfully"}
-
-# Lesson Management APIs
-@app.post("/api/lessons", response_model=LessonBase)
-def create_lesson(request: LessonCreateRequest, db: Session = Depends(get_db)):
-    """Tạo bài học mới."""
-    # Kiểm tra khóa học tồn tại
-    course = db.query(Course).filter(Course.course_id == request.course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-    
-    # Tạo bài học mới
-    new_lesson = Lesson(
-        title=request.title,
-        video_url=request.video_url,
-        duration=request.duration,
-        position=request.position,
-        course_id=request.course_id
-    )
-    
-    db.add(new_lesson)
-    db.commit()
-    db.refresh(new_lesson)
-    
-    return new_lesson
-
-@app.put("/api/lessons/{lesson_id}", response_model=LessonBase)
-def update_lesson(lesson_id: int, request: LessonCreateRequest, db: Session = Depends(get_db)):
-    """Cập nhật bài học."""
-    lesson = db.query(Lesson).filter(Lesson.lesson_id == lesson_id).first()
-    if not lesson:
-        raise HTTPException(status_code=404, detail="Lesson not found")
-    
-    # Cập nhật thông tin
-    lesson.title = request.title
-    lesson.video_url = request.video_url
-    lesson.duration = request.duration
-    lesson.position = request.position
-    
-    db.commit()
-    db.refresh(lesson)
-    
-    return lesson
-
-@app.delete("/api/lessons/{lesson_id}")
-def delete_lesson(lesson_id: int, db: Session = Depends(get_db)):
-    """Xóa bài học."""
-    lesson = db.query(Lesson).filter(Lesson.lesson_id == lesson_id).first()
-    if not lesson:
-        raise HTTPException(status_code=404, detail="Lesson not found")
-    
-    # Xóa các comment liên quan
-    db.query(Comment).filter(Comment.lesson_id == lesson_id).delete()
-    
-    # Xóa bài học
-    db.delete(lesson)
-    db.commit()
-    
-    return {"message": "Lesson deleted successfully"}
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
