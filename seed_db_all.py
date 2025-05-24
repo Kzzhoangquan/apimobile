@@ -1,25 +1,47 @@
 from models import User, Course, Review, Lesson, Comment, Quiz, Question, Option, Enrollment, Wishlist, Notification, Base, user_notifications
-from database import SessionLocal, engine , create_engine , sessionmaker
+from database import create_engine, sessionmaker
 from datetime import datetime, timedelta
 import random
 
-
-
-DATABASE_URL = "mysql+pymysql://root:123456789@localhost:3306/elearning"
+# DATABASE_URL giữ nguyên từ script của bạn
+DATABASE_URL = "mysql+pymysql://root:123456@localhost:3306/elearning"
 engine = create_engine(DATABASE_URL, echo=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def seed_quiz_data():
+def clear_database():
+    """Xóa dữ liệu cũ trong các bảng để bắt đầu seed mới"""
     db = SessionLocal()
     try:
-        # Lấy tất cả lessons có sẵn
+        db.query(user_notifications).delete()
+        db.query(Option).delete()
+        db.query(Question).delete()
+        db.query(Quiz).delete()
+        db.query(Comment).delete()
+        db.query(Lesson).delete()
+        db.query(Review).delete()
+        db.query(Wishlist).delete()
+        db.query(Enrollment).delete()
+        db.query(Course).delete()
+        db.query(Notification).delete()
+        db.query(User).delete()
+        db.commit()
+        print("Đã xóa dữ liệu cũ thành công!")
+    except Exception as e:
+        print(f"Lỗi khi xóa dữ liệu cũ: {str(e)}")
+        db.rollback()
+    finally:
+        db.close()
+
+def seed_quiz_data():
+    """Tạo dữ liệu quiz và câu hỏi, tránh trùng lặp"""
+    db = SessionLocal()
+    try:
         lessons = db.query(Lesson).all()
         
         if not lessons:
             print("Không có lesson nào trong database. Vui lòng seed lessons trước.")
             return
         
-        # Danh sách câu hỏi mẫu cho các chủ đề khác nhau
         quiz_templates = {
             "Android Development": {
                 "quiz_title": "Android Development Quiz",
@@ -56,7 +78,7 @@ def seed_quiz_data():
                         "options": [
                             {"content": "Lưu trữ dữ liệu", "is_correct": 0},
                             {"content": "Giao tiếp giữa các component", "is_correct": 1},
-                            {"content": "Tạo layout", "is_correct": 0},
+                            {"content": "T transformers layout", "is_correct": 0},
                             {"content": "Quản lý memory", "is_correct": 0}
                         ]
                     },
@@ -273,11 +295,9 @@ def seed_quiz_data():
             }
         }
         
-        # Tạo quiz cho mỗi lesson
         for lesson in lessons:
             print(f"Tạo quiz cho lesson: {lesson.title}")
             
-            # Chọn template quiz dựa trên title của lesson hoặc random
             template_key = "Android Development"  # Mặc định
             for key in quiz_templates.keys():
                 if key.lower() in lesson.title.lower():
@@ -286,26 +306,39 @@ def seed_quiz_data():
             
             template = quiz_templates[template_key]
             
-            # Tạo quiz
+            # Kiểm tra xem quiz đã tồn tại cho lesson này chưa
+            existing_quiz = db.query(Quiz).filter(Quiz.lesson_id == lesson.lesson_id).first()
+            if existing_quiz:
+                print(f"Quiz đã tồn tại cho lesson {lesson.title}, bỏ qua...")
+                continue
+            
             quiz = Quiz(
                 lesson_id=lesson.lesson_id,
                 title=f"{template['quiz_title']} - {lesson.title}",
                 created_at=datetime.utcnow()
             )
-            
             db.add(quiz)
-            db.flush()  # Để lấy quiz_id
+            db.flush()
             
             # Tạo câu hỏi cho quiz
-            for idx, question_data in enumerate(template["questions"]):
+            for question_data in template["questions"]:
+                # Kiểm tra xem câu hỏi đã tồn tại chưa
+                existing_question = db.query(Question).filter(
+                    Question.quiz_id == quiz.quiz_id,
+                    Question.content == question_data["content"]
+                ).first()
+                
+                if existing_question:
+                    print(f"Câu hỏi '{question_data['content']}' đã tồn tại trong quiz {quiz.title}, bỏ qua...")
+                    continue
+                
                 question = Question(
                     quiz_id=quiz.quiz_id,
                     content=question_data["content"],
                     question_type="MULTIPLE_CHOICE"
                 )
-                
                 db.add(question)
-                db.flush()  # Để lấy question_id
+                db.flush()
                 
                 # Tạo các option cho câu hỏi
                 for pos, option_data in enumerate(question_data["options"]):
@@ -319,7 +352,6 @@ def seed_quiz_data():
             
             print(f"Đã tạo quiz với {len(template['questions'])} câu hỏi cho lesson {lesson.title}")
         
-        # Commit tất cả thay đổi
         db.commit()
         print(f"Đã tạo thành công quiz cho {len(lessons)} lessons!")
         
@@ -330,10 +362,9 @@ def seed_quiz_data():
         db.close()
 
 def add_more_quiz_questions():
-    """Thêm nhiều câu hỏi đa dạng hơn"""
+    """Thêm câu hỏi bổ sung, tránh trùng lặp"""
     db = SessionLocal()
     try:
-        # Lấy tất cả quiz hiện có
         quizzes = db.query(Quiz).all()
         
         additional_questions = [
@@ -384,20 +415,27 @@ def add_more_quiz_questions():
             }
         ]
         
-        # Thêm câu hỏi cho một số quiz ngẫu nhiên
         selected_quizzes = random.sample(quizzes, min(len(quizzes), 3))
         
         for quiz in selected_quizzes:
-            # Chọn ngẫu nhiên 2-3 câu hỏi để thêm
             questions_to_add = random.sample(additional_questions, random.randint(2, 3))
             
             for question_data in questions_to_add:
+                # Kiểm tra xem câu hỏi đã tồn tại chưa
+                existing_question = db.query(Question).filter(
+                    Question.quiz_id == quiz.quiz_id,
+                    Question.content == question_data["content"]
+                ).first()
+                
+                if existing_question:
+                    print(f"Câu hỏi '{question_data['content']}' đã tồn tại trong quiz {quiz.title}, bỏ qua...")
+                    continue
+                
                 question = Question(
                     quiz_id=quiz.quiz_id,
                     content=question_data["content"],
                     question_type="MULTIPLE_CHOICE"
                 )
-                
                 db.add(question)
                 db.flush()
                 
@@ -423,6 +461,7 @@ def add_more_quiz_questions():
         db.close()
 
 def seed_database():
+    """Tạo dữ liệu mẫu cho toàn bộ cơ sở dữ liệu"""
     # Tạo tất cả các bảng nếu chưa tồn tại
     Base.metadata.create_all(bind=engine)
     
@@ -438,10 +477,7 @@ def seed_database():
         print("Đang tạo 20 người dùng...")
         users = []
         for i in range(1, 21):
-            # Xác định vai trò (5 instructor, 15 student)
             role = "instructor" if i <= 5 else "user"
-            
-            # Xác định giới tính cho ảnh đại diện
             gender = "men" if i % 2 == 0 else "women"
             
             user = User(
@@ -450,7 +486,7 @@ def seed_database():
                 password="password123",
                 email=f"user{i}@example.com",
                 phone=f"01234{56789+i}",
-                avatar_url=f"https://randomuser.me/api/portraits/{gender}/{i % 30}.jpg",
+                avatar_url=f"https://randomuser.me/api/portraits/{gender}/{i % 30}.jpg",  # Giữ nguyên
                 role=role,
                 created_at=datetime.utcnow() - timedelta(days=random.randint(1, 365))
             )
@@ -511,11 +547,9 @@ def seed_database():
         ]
         
         for i in range(20):
-            # Chọn instructor từ danh sách instructor đã tạo
-            instructor_id = i % 5 + 1  # Chỉ chọn từ 5 instructor
-            
-            # Chọn danh mục ngẫu nhiên
+            instructor_id = i % 5 + 1
             category = random.choice(categories)
+            price = random.randint(199, 799) * 1000
             
             course_description = f"""
 Khóa học {course_titles[i]} sẽ giúp bạn từ người mới bắt đầu đến thành thạo.
@@ -529,14 +563,11 @@ Khóa học được thiết kế dành cho cả người mới bắt đầu và
 Học viên sẽ được hỗ trợ 24/7 từ giảng viên.
             """
             
-            # Tạo giá tiền ngẫu nhiên từ 199k đến 799k
-            price = random.randint(199, 799) * 1000
-            
             course = Course(
                 owner_id=instructor_id,
                 title=course_titles[i],
                 description=course_description.strip(),
-                thumbnail_url=thumbnail_urls[i],
+                thumbnail_url=thumbnail_urls[i],  # Giữ nguyên
                 price=price,
                 category=category,
                 created_at=datetime.utcnow() - timedelta(days=random.randint(1, 180))
@@ -545,17 +576,20 @@ Học viên sẽ được hỗ trợ 24/7 từ giảng viên.
             courses.append(course)
         db.commit()
         
-        # Tạo 20 Enrollments (đăng ký khóa học)
+        # Tạo 20 Enrollments
         print("Đang tạo 20 đăng ký khóa học...")
         for i in range(20):
-            # Chọn ngẫu nhiên user (chỉ chọn học viên, không chọn instructor)
-            user_id = random.randint(6, 20)  # Từ user6 đến user20 (học viên)
-            
-            # Chọn ngẫu nhiên khóa học
+            user_id = random.randint(6, 20)
             course_id = random.randint(1, 20)
-            
-            # Tạo ngẫu nhiên tiến độ học từ 0-100%
             progress = random.uniform(0, 100)
+            
+            # Kiểm tra xem enrollment đã tồn tại chưa
+            existing_enrollment = db.query(Enrollment).filter(
+                Enrollment.user_id == user_id,
+                Enrollment.course_id == course_id
+            ).first()
+            if existing_enrollment:
+                continue
             
             enrollment = Enrollment(
                 user_id=user_id,
@@ -566,16 +600,12 @@ Học viên sẽ được hỗ trợ 24/7 từ giảng viên.
             db.add(enrollment)
         db.commit()
         
-        # Tạo 20 Wishlist (danh sách yêu thích)
+        # Tạo 20 Wishlists
         print("Đang tạo 20 danh sách yêu thích...")
         for i in range(20):
-            # Chọn ngẫu nhiên user
             user_id = random.randint(1, 20)
-            
-            # Chọn ngẫu nhiên khóa học
             course_id = random.randint(1, 20)
             
-            # Kiểm tra xem đã có trong wishlist chưa
             existing = db.query(Wishlist).filter(
                 Wishlist.user_id == user_id,
                 Wishlist.course_id == course_id
@@ -590,24 +620,21 @@ Học viên sẽ được hỗ trợ 24/7 từ giảng viên.
                 db.add(wishlist)
         db.commit()
         
-        # Tạo 20 Reviews (đánh giá)
+        # Tạo 20 Reviews
         print("Đang tạo 20 đánh giá...")
         for i in range(20):
-            # Chọn ngẫu nhiên user (chỉ chọn học viên)
             user_id = random.randint(6, 20)
-            
-            # Chọn ngẫu nhiên khóa học
             course_id = random.randint(1, 20)
+            rating = random.randint(3, 5)
+            comment = "Khóa học rất hay và bổ ích! Tôi đã học được rất nhiều kiến thức mới. Giảng viên dạy rất nhiệt tình và dễ hiểu." if rating >= 4 else "Khóa học tạm được, nội dung khá cơ bản. Giảng viên giảng giải dễ hiểu nhưng cần cập nhật thêm nội dung mới."
             
-            # Tạo ngẫu nhiên rating từ 1-5
-            rating = random.randint(3, 5)  # Hầu hết các review là tích cực
+            existing = db.query(Review).filter(
+                Review.user_id == user_id,
+                Review.course_id == course_id
+            ).first()
+            if existing:
+                continue
             
-            # Tạo nội dung đánh giá tùy theo rating
-            if rating >= 4:
-                comment = "Khóa học rất hay và bổ ích! Tôi đã học được rất nhiều kiến thức mới. Giảng viên dạy rất nhiệt tình và dễ hiểu."
-            else:
-                comment = "Khóa học tạm được, nội dung khá cơ bản. Giảng viên giảng giải dễ hiểu nhưng cần cập nhật thêm nội dung mới."
-                
             review = Review(
                 user_id=user_id,
                 course_id=course_id,
@@ -618,132 +645,71 @@ Học viên sẽ được hỗ trợ 24/7 từ giảng viên.
             db.add(review)
         db.commit()
         
-        # Tạo 20 Lessons (bài học)
+        # Tạo 20 Lessons
         print("Đang tạo 20 bài học...")
         lessons = []
         for i in range(20):
-            # Chọn ngẫu nhiên khóa học
             course_id = random.randint(1, 20)
-            
-            # Tạo tiêu đề bài học
             lesson_title = f"Bài {i+1}: Nội dung quan trọng về khóa học"
-            
-            # Tạo ngẫu nhiên thời lượng bài học từ 5-30 phút
-            duration = random.randint(5*60, 30*60)  # seconds
+            duration = random.randint(5*60, 30*60)
             
             lesson = Lesson(
                 course_id=course_id,
                 title=lesson_title,
-                video_url=f"https://example.com/videos/lesson_{i+1}.mp4",
+                video_url=f"https://example.com/videos/lesson_{i+1}.mp4",  # Giữ nguyên
                 duration=duration,
-                position=i % 5 + 1  # Position from 1-5
+                position=i % 5 + 1
             )
             db.add(lesson)
             lessons.append(lesson)
         db.commit()
         
-        # Tạo 20 Comments (bình luận)
+        # Tạo 20 Comments
         print("Đang tạo 20 bình luận...")
+        comment_content = [
+            "Bài học rất hay và bổ ích!",
+            "Tôi có câu hỏi về phần này...",
+            "Giảng viên giải thích rất dễ hiểu.",
+            "Tôi vẫn chưa hiểu rõ lắm về phần này.",
+            "Cảm ơn giảng viên rất nhiều!",
+            "Làm thế nào để thực hành phần này?",
+            "Mong được xem thêm nhiều bài học như thế này.",
+            "Tôi đã học được rất nhiều điều mới.",
+            "Nội dung này có thể áp dụng vào dự án của tôi.",
+            "Hơi khó hiểu một chút nhưng vẫn ổn."
+        ]
+        
         for i in range(20):
-            # Chọn ngẫu nhiên user
             user_id = random.randint(1, 20)
-            
-            # Chọn ngẫu nhiên bài học
             lesson_id = random.randint(1, 20)
             
-            # Tạo nội dung bình luận
-            comment_content = [
-                "Bài học rất hay và bổ ích!",
-                "Tôi có câu hỏi về phần này...",
-                "Giảng viên giải thích rất dễ hiểu.",
-                "Tôi vẫn chưa hiểu rõ lắm về phần này.",
-                "Cảm ơn giảng viên rất nhiều!",
-                "Làm thế nào để thực hành phần này?",
-                "Mong được xem thêm nhiều bài học như thế này.",
-                "Tôi đã học được rất nhiều điều mới.",
-                "Nội dung này có thể áp dụng vào dự án của tôi.",
-                "Hơi khó hiểu một chút nhưng vẫn ổn."
-            ]
+            existing = db.query(Comment).filter(
+                Comment.user_id == user_id,
+                Comment.lesson_id == lesson_id,
+                Comment.comment == comment_content[i % len(comment_content)]
+            ).first()
+            if existing:
+                continue
             
             comment = Comment(
                 user_id=user_id,
                 lesson_id=lesson_id,
-                comment=random.choice(comment_content),
+                comment=comment_content[i % len(comment_content)],
                 created_at=datetime.utcnow() - timedelta(days=random.randint(1, 30))
             )
             db.add(comment)
         db.commit()
         
-        # Tạo 20 Quizzes (bài kiểm tra)
-        print("Đang tạo 20 bài kiểm tra...")
-        quizzes = []
-        for i in range(20):
-            # Chọn ngẫu nhiên bài học
-            lesson_id = random.randint(1, 20)
-            
-            quiz = Quiz(
-                lesson_id=lesson_id,
-                title=f"Bài kiểm tra #{i+1}",
-                created_at=datetime.utcnow() - timedelta(days=random.randint(1, 30))
-            )
-            db.add(quiz)
-            quizzes.append(quiz)
-        db.commit()
-        
-        # Tạo 20 Questions (câu hỏi)
-        print("Đang tạo 20 câu hỏi...")
-        questions = []
-        for i in range(20):
-            # Chọn ngẫu nhiên quiz
-            quiz_id = random.randint(1, 20)
-            
-            # Xác định loại câu hỏi
-            question_types = ["MULTIPLE_CHOICE", "TRUE_FALSE", "TEXT"]
-            question_type = random.choice(question_types)
-            
-            # Tạo nội dung câu hỏi
-            content = f"Câu hỏi {i+1}: Nội dung liên quan đến bài học?"
-            
-            question = Question(
-                quiz_id=quiz_id,
-                content=content,
-                question_type=question_type
-            )
-            db.add(question)
-            questions.append(question)
-        db.commit()
-        
-        # Tạo 20 Options (câu trả lời)
-        print("Đang tạo 20 câu trả lời...")
-        for i in range(20):
-            # Chọn ngẫu nhiên question
-            question_id = random.randint(1, 20)
-            
-            # Xác định xem có phải là đáp án đúng không
-            is_correct = 1 if i % 4 == 0 else 0
-            
-            # Tạo nội dung đáp án
-            content = f"Đáp án {i % 4 + 1}: " + ("Đây là đáp án đúng." if is_correct else "Đây là đáp án sai.")
-            
-            option = Option(
-                question_id=question_id,
-                content=content,
-                is_correct=is_correct,
-                position=i % 4 + 1  # Position from 1-4
-            )
-            db.add(option)
-        db.commit()
-        
-        # Tạo 20 Notifications (thông báo)
+        # Tạo 20 Notifications
         print("Đang tạo 20 thông báo...")
         notifications = []
         for i in range(20):
             notification = Notification(
                 title=f"Thông báo quan trọng #{i+1}",
                 message=f"Nội dung thông báo về các sự kiện và cập nhật mới trên hệ thống.",
-                is_read=i % 2,  # 0: chưa đọc, 1: đã đọc
+                is_read=i % 2,
                 created_at=datetime.utcnow() - timedelta(days=random.randint(1, 30)),
-                image_url=f"https://example.com/notifications/img_{i+1}.jpg"
+                image_url=f"https://example.com/notifications/img_{i+1}.jpg"  # Giữ nguyên
             )
             db.add(notification)
             notifications.append(notification)
@@ -752,13 +718,16 @@ Học viên sẽ được hỗ trợ 24/7 từ giảng viên.
         # Tạo liên kết giữa User và Notification
         print("Đang tạo liên kết giữa người dùng và thông báo...")
         for i in range(20):
-            # Chọn ngẫu nhiên user
             user_id = random.randint(1, 20)
-            
-            # Chọn ngẫu nhiên notification
             notification_id = random.randint(1, 20)
             
-            # Thêm vào bảng liên kết
+            existing = db.query(user_notifications).filter(
+                user_notifications.c.user_id == user_id,
+                user_notifications.c.notification_id == notification_id
+            ).first()
+            if existing:
+                continue
+            
             db.execute(
                 user_notifications.insert().values(
                     user_id=user_id,
@@ -776,6 +745,11 @@ Học viên sẽ được hỗ trợ 24/7 từ giảng viên.
         db.close()
 
 if __name__ == "__main__":
+    # Xóa dữ liệu cũ trước khi seed mới
+    clear_database()
+    # Seed dữ liệu chính
     seed_database()
+    # Seed dữ liệu quiz
     seed_quiz_data()
+    # Thêm câu hỏi bổ sung
     add_more_quiz_questions()

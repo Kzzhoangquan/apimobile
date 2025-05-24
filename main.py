@@ -193,16 +193,11 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
 
 @app.post("/auth/google", response_model=UserResponse)
 def google_login(request: GoogleLoginRequest, db: Session = Depends(get_db)):
-    # Kiểm tra xem google_id đã tồn tại chưa
     user = db.query(User).filter(User.google_id == request.google_id).first()
-    
     if user:
-        # Nếu đã có, trả về user
         return user
-    
-    # Nếu chưa, tạo user mới
     user = User(
-        username=request.email.split("@")[0],  # Tạo username từ email
+        username=request.email.split("@")[0],
         email=request.email,
         google_id=request.google_id,
         full_name=request.full_name or "Google User",
@@ -219,7 +214,6 @@ def google_login(request: GoogleLoginRequest, db: Session = Depends(get_db)):
 
 @app.post("/auth/register", response_model=UserResponse)
 def register(request: RegisterRequest, db: Session = Depends(get_db)):
-    # Kiểm tra username hoặc email đã tồn tại
     existing_user = db.query(User).filter(
         (User.username == request.username) | (User.phone == request.phone)
     ).first()
@@ -229,13 +223,12 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
         if existing_user.phone == request.phone:
             raise HTTPException(status_code=400, detail="Số điện thoại đã tồn tại")
 
-    # Tạo user mới
     user = User(
         username=request.username,
         email=request.email,
         password=request.password,
         phone=request.phone,
-        full_name=request.username,  # Dùng username làm full_name
+        full_name=request.username, 
         role="user",
         avatar_url=None,
         google_id=None
@@ -267,25 +260,22 @@ def reset_password(request: PasswordResetRequest, db: Session = Depends(get_db))
 async def get_quizzes(request: QuizRequest):
     db = SessionLocal()
     try:
-        # Query quizzes với lesson_id
         quizzes = db.query(Quiz).filter(Quiz.lesson_id == request.lesson_id).all()
         if not quizzes:
             raise HTTPException(status_code=404, detail="Không tìm thấy quiz cho lesson_id")
 
         questions_response = []
         for quiz in quizzes:
-            # Lấy câu hỏi MULTIPLE_CHOICE
             questions = db.query(Question).filter(
                 Question.quiz_id == quiz.quiz_id,
                 Question.question_type == "MULTIPLE_CHOICE"
             ).all()
             for question in questions:
-                # Lấy 4 options
                 options = db.query(Option).filter(
                     Option.question_id == question.question_id
                 ).order_by(Option.position).limit(4).all()
                 if len(options) != 4:
-                    continue  # Bỏ qua nếu không đủ 4 lựa chọn
+                    continue
                 question_response = QuestionResponse(
                     question_id=question.question_id,
                     content=question.content,
@@ -353,12 +343,8 @@ async def change_password(password_change: PasswordChange):
         user = db.query(User).filter(User.user_id == password_change.user_id).first()
         if not user:
             raise HTTPException(status_code=404, detail={"error": "Người dùng không tồn tại"})
-
-        # Kiểm tra mật khẩu hiện tại (so sánh trực tiếp)
         if user.password != password_change.current_password:
             raise HTTPException(status_code=400, detail={"error": "Mật khẩu hiện tại không đúng"})
-
-        # Lưu mật khẩu mới (plaintext)
         user.password = password_change.new_password
         db.commit()
         return {"message": "Đổi mật khẩu thành công"}
@@ -375,23 +361,16 @@ async def change_password(password_change: PasswordChange):
 async def save_quiz_result(result: QuizResultRequest):
     db = SessionLocal()
     try:
-        # Kiểm tra user
         user = db.query(User).filter(User.user_id == result.user_id).first()
         if not user:
             raise HTTPException(status_code=404, detail={"error": "Người dùng không tồn tại"})
 
-        # Tìm quiz_id từ question_id
         question = db.query(Question).filter(Question.question_id == result.question_id).first()
         if not question:
             raise HTTPException(status_code=404, detail={"error": "Câu hỏi không tồn tại"})
-
         quiz_id = question.quiz_id
-
-        # Kiểm tra định dạng score
         if not result.score or "/" not in result.score:
             raise HTTPException(status_code=400, detail={"error": "Định dạng điểm không hợp lệ, cần dạng 'X/Y'"})
-
-        # Lưu kết quả vào quiz_results
         quiz_result = QuizResult(
             user_id=result.user_id,
             quiz_id=quiz_id,
@@ -1028,6 +1007,211 @@ def update_fcm_token(user_id: int, token_data: FCMTokenCreate, db: Session = Dep
     db.refresh(new_token)
     
     return new_token
+
+
+class LessonCreateRequest(BaseModel):
+    title: str
+    video_url: str
+    duration: int
+    position: int
+    course_id: int
+
+class CourseCreateRequest(BaseModel):
+    title: str
+    description: str
+    price: float
+    category: str | None = None
+    thumbnail_url: str | None = None
+    owner_id: int
+    
+@app.get("/api/instructors/{instructor_id}/courses", response_model=List[CourseResponse])
+def get_instructor_courses(instructor_id: int, db: Session = Depends(get_db)):
+    """Lấy danh sách khóa học của một instructor."""
+    # Kiểm tra instructor tồn tại
+    instructor = db.query(User).filter(User.user_id == instructor_id).first()
+    if not instructor:
+        raise HTTPException(status_code=404, detail="Instructor not found")
+    
+    # Lấy các khóa học của instructor
+    courses = db.query(Course).filter(Course.owner_id == instructor_id).all()
+    
+    result = []
+    for course in courses:
+        # Tính rating trung bình
+        avg_rating = db.query(func.avg(Review.rating)).filter(
+            Review.course_id == course.course_id).scalar() or 4.5
+        
+        # Kiểm tra bestseller
+        is_bestseller = False
+        reviews_count = db.query(func.count(Review.review_id)).filter(
+            Review.course_id == course.course_id).scalar() or 0
+        if reviews_count >= 3 and avg_rating >= 4.5:
+            is_bestseller = True
+            
+        result.append({
+            "course_id": course.course_id,
+            "title": course.title,
+            "description": course.description,
+            "thumbnail_url": course.thumbnail_url or "https://via.placeholder.com/300x200",
+            "price": course.price or 0.0,
+            "rating": round(avg_rating, 1),
+            "instructor_name": course.instructor.full_name,
+            "is_bestseller": is_bestseller,
+            "category": course.category
+        })
+    
+    return result
+
+@app.post("/api/courses", response_model=CourseResponse)
+def create_course(request: CourseCreateRequest, db: Session = Depends(get_db)):
+    """Tạo khóa học mới."""
+    # Kiểm tra instructor tồn tại
+    instructor = db.query(User).filter(User.user_id == request.owner_id).first()
+    if not instructor:
+        raise HTTPException(status_code=404, detail="Instructor not found")
+    
+    # Tạo khóa học mới
+    new_course = Course(
+        title=request.title,
+        description=request.description,
+        price=request.price,
+        category=request.category,
+        thumbnail_url=request.thumbnail_url or "https://via.placeholder.com/300x200",
+        owner_id=request.owner_id,
+        created_at=datetime.utcnow()
+    )
+    
+    db.add(new_course)
+    db.commit()
+    db.refresh(new_course)
+    
+    return {
+        "course_id": new_course.course_id,
+        "title": new_course.title,
+        "description": new_course.description,
+        "thumbnail_url": new_course.thumbnail_url,
+        "price": new_course.price,
+        "rating": 0.0,
+        "instructor_name": instructor.full_name,
+        "is_bestseller": False,
+        "category": new_course.category
+    }
+
+@app.put("/api/courses/{course_id}", response_model=CourseResponse)
+def update_course(course_id: int, request: CourseCreateRequest, db: Session = Depends(get_db)):
+    """Cập nhật khóa học."""
+    course = db.query(Course).filter(Course.course_id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    # Cập nhật thông tin
+    course.title = request.title
+    course.description = request.description
+    course.price = request.price
+    course.category = request.category
+    course.thumbnail_url = request.thumbnail_url or course.thumbnail_url
+    
+    db.commit()
+    db.refresh(course)
+    
+    # Tính rating trung bình
+    avg_rating = db.query(func.avg(Review.rating)).filter(
+        Review.course_id == course.course_id).scalar() or 4.5
+    
+    return {
+        "course_id": course.course_id,
+        "title": course.title,
+        "description": course.description,
+        "thumbnail_url": course.thumbnail_url,
+        "price": course.price,
+        "rating": round(avg_rating, 1),
+        "instructor_name": course.instructor.full_name,
+        "is_bestseller": False,
+        "category": course.category
+    }
+
+@app.delete("/api/courses/{course_id}")
+def delete_course(course_id: int, db: Session = Depends(get_db)):
+    """Xóa khóa học."""
+    course = db.query(Course).filter(Course.course_id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    # Xóa các bài học liên quan
+    db.query(Lesson).filter(Lesson.course_id == course_id).delete()
+    
+    # Xóa các đánh giá liên quan
+    db.query(Review).filter(Review.course_id == course_id).delete()
+    
+    # Xóa các enrollment liên quan
+    db.query(Enrollment).filter(Enrollment.course_id == course_id).delete()
+    
+    # Xóa khỏi wishlist
+    db.query(Wishlist).filter(Wishlist.course_id == course_id).delete()
+    
+    # Xóa khóa học
+    db.delete(course)
+    db.commit()
+    
+    return {"message": "Course deleted successfully"}
+
+# Lesson Management APIs
+@app.post("/api/lessons", response_model=LessonBase)
+def create_lesson(request: LessonCreateRequest, db: Session = Depends(get_db)):
+    """Tạo bài học mới."""
+    # Kiểm tra khóa học tồn tại
+    course = db.query(Course).filter(Course.course_id == request.course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    # Tạo bài học mới
+    new_lesson = Lesson(
+        title=request.title,
+        video_url=request.video_url,
+        duration=request.duration,
+        position=request.position,
+        course_id=request.course_id
+    )
+    
+    db.add(new_lesson)
+    db.commit()
+    db.refresh(new_lesson)
+    
+    return new_lesson
+
+@app.put("/api/lessons/{lesson_id}", response_model=LessonBase)
+def update_lesson(lesson_id: int, request: LessonCreateRequest, db: Session = Depends(get_db)):
+    """Cập nhật bài học."""
+    lesson = db.query(Lesson).filter(Lesson.lesson_id == lesson_id).first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    
+    # Cập nhật thông tin
+    lesson.title = request.title
+    lesson.video_url = request.video_url
+    lesson.duration = request.duration
+    lesson.position = request.position
+    
+    db.commit()
+    db.refresh(lesson)
+    
+    return lesson
+
+@app.delete("/api/lessons/{lesson_id}")
+def delete_lesson(lesson_id: int, db: Session = Depends(get_db)):
+    """Xóa bài học."""
+    lesson = db.query(Lesson).filter(Lesson.lesson_id == lesson_id).first()
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    
+    # Xóa các comment liên quan
+    db.query(Comment).filter(Comment.lesson_id == lesson_id).delete()
+    
+    # Xóa bài học
+    db.delete(lesson)
+    db.commit()
+    
+    return {"message": "Lesson deleted successfully"}
 
 @app.post("/test-notification/{user_id}")
 def send_test_notification(user_id: int, db: Session = Depends(get_db)):
